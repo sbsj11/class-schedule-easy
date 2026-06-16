@@ -285,7 +285,15 @@
             box-shadow: 0 6px 18px rgba(102,126,234,.45);
             z-index: 10;
         }
-        .course-name { font-weight: 700; font-size: 12.5px; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .course-name {
+            font-weight: 700; font-size: 12.5px; margin-bottom: 3px;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow-wrap: break-word;
+            line-height: 1.35;
+        }
         .course-info { font-size: 10.5px; opacity: .88; line-height: 1.4; }
 
         /* 冲突堆叠 */
