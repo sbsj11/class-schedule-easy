@@ -434,16 +434,70 @@
         .toast-message.error { border-left-color: var(--danger-color); }
         @keyframes toastUp { from{opacity:0;transform:translateX(-50%) translateY(18px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
 
-        /* 响应式 */
+        /* ========== 响应式 ========== */
+
+        /* 平板及以下 (≤1200px)：单列布局 */
         @media (max-width: 1200px) {
             .app-container { grid-template-columns: 1fr; }
-            .week-selector, .conflict-panel { position: static; }
-            .week-grid { grid-template-columns: repeat(6, 1fr); }
+            .week-selector, .conflict-panel {
+                position: static;
+                width: 100%; min-width: auto; max-width: none;
+            }
+            .week-grid { grid-template-columns: repeat(9, 1fr); }
         }
+
+        /* 手机横屏 / 小平板 (≤768px) */
         @media (max-width: 768px) {
             .app-container { padding: 10px; gap: 10px; }
-            .schedule-main { padding: 14px; overflow-x: auto; }
+            .schedule-main { padding: 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+            .schedule-table { min-width: 680px; }
             .action-buttons { width: 100%; justify-content: center; }
+            .schedule-header { flex-direction: column; align-items: flex-start; }
+            .schedule-title { font-size: 18px; }
+            .week-selector { padding: 14px; }
+            .week-selector h3 { font-size: 14px; margin-bottom: 10px; }
+            .week-btn { padding: 7px 3px; font-size: 12px; border-radius: 7px; }
+            .week-grid { gap: 4px; }
+            .course-name { font-size: 11px; }
+            .course-info { font-size: 9.5px; }
+            .course-card { padding: 5px 6px; }
+            .btn { padding: 7px 12px; font-size: 12px; }
+            .modal-content { width: 90vw; min-width: auto; max-width: 90vw; padding: 20px; }
+            .tooltip-popup { width: 260px; min-width: 260px; max-width: 260px; }
+            .theme-toggle { top: 10px; right: 10px; width: 40px; height: 40px; font-size: 18px; }
+        }
+
+        /* 手机竖屏 (≤480px) */
+        @media (max-width: 480px) {
+            .app-container { padding: 6px; gap: 6px; }
+            .schedule-main { padding: 10px; border-radius: 10px; }
+            /* 周次选择：6列紧凑布局，文字不再溢出 */
+            .week-grid { grid-template-columns: repeat(6, 1fr); gap: 3px; }
+            .week-btn { padding: 6px 2px; font-size: 11px; border-radius: 6px; min-width: 0; }
+            .week-selector { padding: 10px; border-radius: 10px; }
+            .week-stat { margin-top: 12px; padding-top: 10px; }
+            .week-stat-num { font-size: 24px; }
+            .schedule-header { margin-bottom: 10px; gap: 6px; }
+            .schedule-title { font-size: 15px; }
+            .week-badge { font-size: 11px; padding: 3px 10px; }
+            .btn { padding: 6px 10px; font-size: 11px; border-radius: 6px; }
+            .schedule-table thead th { padding: 6px 3px; font-size: 11px; }
+            .time-slot-header { padding: 8px 3px; font-size: 10px; }
+            .course-card { padding: 4px 5px; border-radius: 5px; }
+            .course-name { font-size: 10.5px; }
+            .course-info { font-size: 8.5px; }
+            .modal-content { width: 95vw; min-width: auto; max-width: 95vw; padding: 16px; max-height: 90vh; border-radius: 12px; }
+            .modal-header h2 { font-size: 16px; }
+            .form-group label { font-size: 12px; }
+            .form-group input, .form-group select { padding: 8px 10px; font-size: 12px; }
+            .tooltip-popup { width: 220px; min-width: 220px; max-width: 220px; padding: 10px 14px; font-size: 11px; }
+            .tooltip-field { font-size: 11px; margin-bottom: 5px; }
+            .tooltip-label { width: 55px; font-size: 11px; }
+            .tooltip-value { font-size: 11px; }
+            .conflict-panel { padding: 12px; border-radius: 10px; }
+            .conflict-actions .btn { padding: 4px 8px; font-size: 10px; }
+            .conflict-item { padding: 10px; }
+            .theme-toggle { top: 6px; right: 6px; width: 36px; height: 36px; font-size: 16px; }
         }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: var(--bg-tertiary); border-radius: 3px; }
