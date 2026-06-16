@@ -6,6 +6,8 @@
     <title>校园课表可视化系统</title>
     <!-- 引入 Vue 3 CDN -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- 引入 pdf.js 用于 PDF 课表解析 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         /* ========== 全局样式与CSS变量（主题系统） ========== */
         :root {
@@ -575,6 +577,8 @@
                         <button class="btn btn-outline" @click="exportData">💾 导出</button>
                         <button class="btn btn-outline" @click="triggerImport">📂 导入</button>
                         <input type="file" ref="fileInput" accept=".json" class="file-input-hidden" @change="importData">
+                        <button class="btn btn-outline" @click="triggerPdfImport" title="从PDF课表导入">📄 PDF导入</button>
+                        <input type="file" ref="pdfInput" accept=".pdf" class="file-input-hidden" @change="importPdf">
                         <button class="btn btn-danger" @click="scanAllConflicts">🔍 扫描冲突</button>
                     </div>
                 </div>
@@ -746,6 +750,9 @@
 
     <!-- ==================== Vue 应用逻辑 ==================== -->
     <script>
+    // 配置 pdf.js worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
     const { createApp, ref, reactive, onMounted } = Vue;
 
     createApp({
@@ -1118,6 +1125,315 @@
                 r.readAsText(f); ev.target.value='';
             }
 
+            // =============== PDF 导入 ===============
+
+            const pdfInput = ref(null);
+
+            /** 触发PDF文件选择 */
+            function triggerPdfImport() { pdfInput.value?.click(); }
+
+            /**
+             * 从PDF课表导入课程数据
+             * 使用 pdf.js 在浏览器端解析，支持中文字体
+             */
+            async function importPdf(ev) {
+                const f = ev.target.files[0]; if (!f) return;
+                if (!f.name.toLowerCase().endsWith('.pdf')) { showToast('请选择PDF文件', 'error'); ev.target.value=''; return; }
+
+                showToast('⏳ 正在解析PDF课表...');
+
+                try {
+                    const arrayBuffer = await f.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+                    const allCourses = [];
+                    // 课表通常在第1-2页
+                    for (let pageNum = 1; pageNum <= Math.min(pdf.numPages, 2); pageNum++) {
+                        const page = await pdf.getPage(pageNum);
+                        const textContent = await page.getTextContent();
+
+                        // 收集所有文本项及其位置
+                        const items = textContent.items.map(item => ({
+                            str: item.str,
+                            x: item.transform[4],
+                            y: item.transform[5],
+                            width: item.width,
+                            height: item.height
+                        }));
+
+                        if (items.length === 0) continue;
+
+                        // 按Y坐标聚类成行
+                        const rows = clusterByY(items, 3);
+                        // 按X坐标聚类成列
+                        const pageCourses = parseScheduleGrid(rows);
+                        allCourses.push(...pageCourses);
+                    }
+
+                    if (allCourses.length === 0) {
+                        showToast('未识别到课程数据，请确认PDF格式', 'error');
+                    } else {
+                        courses.value = allCourses;
+                        showToast(`📄 成功导入 ${allCourses.length} 门课`);
+                        scanAllConflicts();
+                    }
+                } catch (err) {
+                    console.error('PDF解析失败:', err);
+                    showToast('PDF解析失败，请确认文件有效', 'error');
+                }
+                ev.target.value = '';
+            }
+
+            /**
+             * 按Y坐标将文本项聚类成行
+             * @param {Array} items - 文本项数组
+             * @param {number} tolerance - Y坐标容差
+             */
+            function clusterByY(items, tolerance) {
+                // 按Y坐标降序排列（PDF中Y轴向上）
+                const sorted = [...items].sort((a, b) => b.y - a.y);
+                const rows = [];
+                let currentRow = [sorted[0]];
+
+                for (let i = 1; i < sorted.length; i++) {
+                    if (Math.abs(sorted[i].y - currentRow[0].y) <= tolerance) {
+                        currentRow.push(sorted[i]);
+                    } else {
+                        rows.push(currentRow.sort((a, b) => a.x - b.x));
+                        currentRow = [sorted[i]];
+                    }
+                }
+                rows.push(currentRow.sort((a, b) => a.x - b.x));
+                return rows;
+            }
+
+            /**
+             * 解析课表网格，提取课程数据
+             * @param {Array} rows - 按行聚类的文本项
+             */
+            function parseScheduleGrid(rows) {
+                // 找到所有唯一的X坐标作为列分界
+                const allX = new Set();
+                for (const row of rows) {
+                    for (const item of row) {
+                        allX.add(Math.round(item.x));
+                    }
+                }
+                const colBounds = [...allX].sort((a, b) => a - b);
+
+                // 聚合成有意义的列（合并相近的X坐标）
+                const columns = clusterValues(colBounds, 15); // 15px tolerance
+                // console.log('检测到列数:', columns.length, '列位置:', columns);
+
+                const courses = [];
+                const weekDaysMap = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
+                const timeSlotMap = { '1': '1-2', '3': '3-4', '5': '5-6', '7': '7-8', '9': '9-10' };
+
+                // 跳过表头行（前几行通常是标题和列头）
+                let dataStartRow = 0;
+                for (let i = 0; i < rows.length; i++) {
+                    const rowText = rows[i].map(it => it.str).join('');
+                    if (rowText.includes('星期一') || rowText.includes('节次') || rowText.includes('时间段')) {
+                        dataStartRow = i + 1;
+                    }
+                }
+
+                // 确定每行对应的X列索引
+                // 第一列是时间标签，后续列是周一至周日
+                for (let rowIdx = dataStartRow; rowIdx < rows.length; rowIdx++) {
+                    const row = rows[rowIdx];
+                    if (row.length === 0) continue;
+
+                    const rowText = row.map(it => it.str).join('').trim();
+                    // 跳过空行、标题行
+                    if (!rowText || rowText === '上午' || rowText === '下午' || rowText === '晚上' || rowText === '午' || rowText === '晚') continue;
+                    if (rowText.includes('共') && rowText.includes('周')) continue; // 跳过页脚
+
+                    // 确定这一行的时间槽
+                    let timeSlot = null;
+                    // 找第一列中的数字（1, 3, 5, 7, 9 等）
+                    const firstItemStr = row[0] ? row[0].str.trim() : '';
+                    const timeMatch = firstItemStr.match(/^(\d+)/);
+                    if (timeMatch) {
+                        timeSlot = timeSlotMap[timeMatch[1]];
+                    }
+                    if (!timeSlot) continue; // 跳过没有时间槽的行
+
+                    // 获取每列的文本（按X坐标分配到对应列）
+                    // 对于简单情况，按X排序后跳过第一列（时间列），后续7列对应周一到周日
+                    const sortedRow = [...row].sort((a, b) => a.x - b.x);
+
+                    // 跳过时间列（第一个元素），取后续7列
+                    const dayColumns = sortedRow.slice(1);
+
+                    // 将dayColumns聚合为7列
+                    const colClusters = clusterItemsToColumns(dayColumns, columns.slice(1), 20);
+
+                    for (let dayIdx = 0; dayIdx < Math.min(colClusters.length, 7); dayIdx++) {
+                        const cellItems = colClusters[dayIdx];
+                        if (!cellItems || cellItems.length === 0) continue;
+
+                        const cellText = cellItems.map(it => it.str).join('').trim();
+                        if (!cellText || cellText.length < 3) continue;
+
+                        const day = weekDaysMap[dayIdx];
+
+                        // 解析单元格中的课程数据
+                        const cellCourses = parseCellContent(cellText, day, timeSlot);
+                        courses.push(...cellCourses);
+                    }
+                }
+
+                return courses;
+            }
+
+            /**
+             * 将值聚类（合并相近值）
+             */
+            function clusterValues(values, tolerance) {
+                if (values.length === 0) return [];
+                const sorted = [...values].sort((a, b) => a - b);
+                const clusters = [[sorted[0]]];
+                for (let i = 1; i < sorted.length; i++) {
+                    if (sorted[i] - clusters[clusters.length - 1][0] <= tolerance) {
+                        clusters[clusters.length - 1].push(sorted[i]);
+                    } else {
+                        clusters.push([sorted[i]]);
+                    }
+                }
+                return clusters.map(c => Math.round(c.reduce((a, b) => a + b, 0) / c.length));
+            }
+
+            /**
+             * 将文本项按列位置聚类
+             */
+            function clusterItemsToColumns(items, columns, tolerance) {
+                if (!columns || columns.length === 0) return [items]; // fallback
+                const result = columns.map(() => []);
+                for (const item of items) {
+                    let bestCol = -1;
+                    let bestDist = Infinity;
+                    for (let i = 0; i < columns.length; i++) {
+                        const dist = Math.abs(item.x - columns[i]);
+                        if (dist < bestDist && dist <= tolerance) {
+                            bestDist = dist;
+                            bestCol = i;
+                        }
+                    }
+                    if (bestCol >= 0) {
+                        result[bestCol].push(item);
+                    }
+                }
+                return result;
+            }
+
+            /**
+             * 解析单元格文本，提取课程信息
+             * 课程格式: courseName:location/教师:teacher/教学班:classCode/考核方式:examType/...
+             * 前面可能有数字前缀（如"1"代表节次编号）
+             */
+            function parseCellContent(cellText, day, timeSlot) {
+                const courses = [];
+
+                // 去掉前导数字（节次编号）
+                let text = cellText.replace(/^\d+/, '');
+
+                // 分割多个课程（同一格内可能有多个课程，用特定模式分隔）
+                // 通常以课程名后跟英文冒号或中文冒号的模式标识新课程
+                // 模式: 课程名:地点/教师:... 或 课程名(周次)/地点/...
+
+                // 首先尝试按 "课程学时组成" 分割（每个完整课程条目以此结尾）
+                const sections = text.split(/课程学时组成[:：]/);
+
+                for (const section of sections) {
+                    if (!section.trim()) continue;
+
+                    const result = parseOneCourse(section, day, timeSlot);
+                    if (result) {
+                        courses.push(...result);
+                    }
+                }
+
+                // 如果没有用课程学时组成分割出来，尝试其他方式
+                if (courses.length === 0) {
+                    const result = parseOneCourse(text, day, timeSlot);
+                    if (result) courses.push(...result);
+                }
+
+                return courses;
+            }
+
+            /**
+             * 解析单个课程文本段
+             */
+            function parseOneCourse(text, day, timeSlot) {
+                const courses = [];
+                // 提取课程名称（第一个冒号前的部分，去掉前导数字和特殊字符）
+                const nameMatch = text.match(/^([^:\/：]+?)[:：]/);
+                if (!nameMatch) return null;
+
+                let courseName = nameMatch[1].trim();
+                // 清理课程名中的乱码残留
+                courseName = courseName.replace(/[^一-鿿㐀-䶿a-zA-Z0-9Ⅰ-ↈ　-〿＀-￯·×ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ\-·+]/g, '');
+                if (!courseName || courseName.length < 2) return null;
+
+                // 提取地点（第一个冒号后到/教师或/教之间的部分）
+                const locationMatch = text.match(/[:：]([^\/]+?)(?:\/教师|\/教[^一-鿿])/);
+                const place = locationMatch ? locationMatch[1].trim() : '';
+
+                // 提取教师信息
+                const teacherMatch = text.match(/(?:教师|教)[^一-鿿]*?[:：]([^\/]+)/);
+                const teacherRaw = teacherMatch ? teacherMatch[1].trim() : '';
+                // 清理教师名中的乱码
+                const teacher = teacherRaw.replace(/[^一-鿿㐀-䶿a-zA-Z0-9\-\/／·　-〿;,；\s]/g, '').trim();
+
+                // 提取周次信息
+                const weekMatch = text.match(/(\d+)周/);
+                const weekNum = weekMatch ? parseInt(weekMatch[1]) : 1;
+
+                // 尝试找出所有涉及的周次
+                const weeks = extractWeeks(text);
+
+                // 生成kchId
+                const kchId = genKchId();
+
+                for (const w of weeks) {
+                    courses.push({
+                        kchId,
+                        id: null,
+                        name: courseName,
+                        teacher: teacher || '未知',
+                        time: timeSlot,
+                        place: place || '未知',
+                        week: w,
+                        day: day
+                    });
+                }
+
+                return courses.length > 0 ? courses : null;
+            }
+
+            /**
+             * 从课程文本中提取周次范围
+             * 支持格式: "1-9周,11-14周", "1-7周,9-12周,14-18周", "16周"
+             */
+            function extractWeeks(text) {
+                const weeks = new Set();
+                // 匹配所有周次模式: "1-9周", "16周", "1-7周,9周"
+                const weekPattern = /(\d+)(?:-(\d+))?周/g;
+                let match;
+                while ((match = weekPattern.exec(text)) !== null) {
+                    const start = parseInt(match[1]);
+                    const end = match[2] ? parseInt(match[2]) : start;
+                    for (let w = start; w <= end && w <= 18; w++) {
+                        weeks.add(w);
+                    }
+                }
+                // 如果没有找到周次，默认设为第1周
+                if (weeks.size === 0) weeks.add(1);
+                return [...weeks].sort((a, b) => a - b);
+            }
+
             // =============== 冲突检测算法 ===============
 
             /**
@@ -1179,12 +1495,12 @@
             // =============== 模板暴露接口 ===============
             return {
                 weekDays, timeSlots, selectedWeek, isDark, courses,
-                conflictIdx, allConflicts, tooltip, modal, formData, toast, fileInput,
+                conflictIdx, allConflicts, tooltip, modal, formData, toast, fileInput, pdfInput,
                 toggleTheme, selectWeek, getWeekCourseCount,
                 getCellCourses, hasConflict, getVisibleIndex, prevConflict, nextConflict,
                 showTooltip, hideTooltip,
                 showAddModal, viewCourse, switchToEdit, saveCourse, deleteCurrentCourse, closeModal,
-                exportData, triggerImport, importData,
+                exportData, triggerImport, importData, triggerPdfImport, importPdf,
                 scanAllConflicts, manualReschedule, replaceCourse, deleteConflicted, clearResolvedConflicts
             };
         }
