@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>校园课表可视化系统</title>
+    <!-- 引入 Vue 3 CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        /* ========== 全局样式与CSS变量（主题系统） ========== */
+        :root {
+            /* 浅色主题变量 */
+            --bg-primary: #f0f4f8;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #e8eef4;
+            --text-primary: #1a2332;
+            --text-secondary: #5a6877;
+            --border-color: #d0dae6;
+            --accent-color: #2563eb;
+            --accent-hover: #1d4ed8;
+            --success-color: #16a34a;
+            --danger-color: #dc2626;
+            --warning-color: #d97706;
+            --conflict-bg: #fef2f2;
+            --conflict-border: #fecaca;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+            --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+        }
+
+        /* 深色主题变量 */
+        [data-theme="dark"] {
+            --bg-primary: #0c1222;
+            --bg-secondary: #151d30;
+            --bg-tertiary: #1e2940;
+            --text-primary: #e8ecf2;
+            --text-secondary: #8896a8;
+            --border-color: #2a3850;
+            --accent-color: #3b82f6;
+            --accent-hover: #60a5fa;
+            --success-color: #22c55e;
+            --danger-color: #ef4444;
+            --warning-color: #f59e0b;
+            --conflict-bg: #450a0a;
+            --conflict-border: #7f1d1d;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.2);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.35);
+            --shadow-lg: 0 8px 24px rgba(0,0,0,0.45);
+        }
+
+        /* ========== 基础重置 ========== */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            transition: background .3s, color .3s;
+            /* 防止水平方向内容溢出导致布局抖动 */
+            overflow-x: hidden;
+        }
+
+        /* ========== 主容器三栏布局 ========== */
+        .app-container {
+            display: grid;
+            grid-template-columns: 180px 1fr 300px;
+            gap: 16px;
+            max-width: 1500px;
+            margin: 0 auto;
+            padding: 20px;
+            min-height: 100vh;
+            /* 固定整体宽度防止内容变化导致抖动 */
+            width: fit-content;
+            min-width: 100%;
+        }
+
+        /* ========== 左侧周次选择栏 ========== */
+        .week-selector {
+            background: var(--bg-secondary);
+            border-radius: 14px;
+            padding: 18px;
+            box-shadow: var(--shadow-md);
+            height: fit-content;
+            position: sticky;
+            top: 20px;
+            border: 1px solid var(--border-color);
+            /* 固定宽度防止布局抖动 */
+            width: 180px;
+            min-width: 180px;
+            max-width: 180px;
+            box-sizing: border-box;
+        }
+        .week-selector h3 {
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 14px;
+            color: var(--text-primary);
+        }
+        .week-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+        }
+        .week-btn {
+            padding: 9px 4px;
+            border: 1.5px solid var(--border-color);
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all .2s;
+            text-align: center;
+        }
+        .week-btn:hover { border-color: var(--accent-color); color: var(--accent-color); }
+        .week-btn.active {
+            background: linear-gradient(135deg, #2563eb, #7c3aed);
+            color: white;
+            border-color: transparent;
+            box-shadow: 0 2px 8px rgba(37,99,235,.35);
+        }
+        .week-stat {
+            margin-top: 18px;
+            padding-top: 14px;
+            border-top: 1px solid var(--border-color);
+        }
+        .week-stat-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+        .week-stat-num { font-size: 28px; font-weight: 800; background: linear-gradient(135deg, #2563eb, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .week-stat-unit { font-size: 12px; color: var(--text-secondary); font-weight: normal; -webkit-text-fill-color: var(--text-secondary); }
+
+        /* ========== 中间课表主区域 ========== */
+        .schedule-main {
+            background: var(--bg-secondary);
+            border-radius: 14px;
+            padding: 22px;
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border-color);
+            /* 固定最小宽度防止内容变化导致抖动 */
+            min-width: 0;
+            width: 100%;
+            box-sizing: border-box;
+            /* 防止内容溢出撑开 */
+            overflow: hidden;
+        }
+        .schedule-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .schedule-title {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .week-badge {
+            background: linear-gradient(135deg, #2563eb, #7c3aed);
+            color: white;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .action-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+        .btn {
+            padding: 9px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all .2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .btn-primary { background: linear-gradient(135deg, #2563eb, #7c3aed); color: white; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37,99,235,.35); }
+        .btn-outline { background: transparent; border: 1.5px solid var(--border-color); color: var(--text-secondary); }
+        .btn-outline:hover { border-color: var(--accent-color); color: var(--accent-color); }
+        .btn-danger { background: var(--danger-color); color: white; }
+        .btn-danger:hover { opacity: .9; transform: translateY(-1px); }
+
+        /* 主题切换按钮 */
+        .theme-toggle {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            width: 46px;
+            height: 46px;
+            border-radius: 50%;
+            background: var(--bg-secondary);
+            border: 1.5px solid var(--border-color);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            box-shadow: var(--shadow-md);
+            z-index: 1000;
+            transition: all .35s cubic-bezier(.4,0,.2,1);
+        }
+        .theme-toggle:hover { transform: rotate(180deg) scale(1.1); border-color: var(--accent-color); }
+
+        /* ========== 课表网格 ========== */
+        .schedule-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 3px;
+            /* 固定表格布局，防止内容变化导致列宽抖动 */
+            table-layout: fixed;
+        }
+        .schedule-table th, .schedule-table td { border: none; padding: 0; }
+        .schedule-table thead th {
+            background: var(--bg-tertiary);
+            padding: 10px 6px;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            border-radius: 8px;
+            text-align: center;
+        }
+        .time-slot-header {
+            background: linear-gradient(135deg, #f0f4ff, #e8ecff);
+            [data-theme="dark"] & { background: linear-gradient(135deg, #1a2744, #222d47); }
+            padding: 14px 6px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-primary);
+            border-radius: 8px;
+            text-align: center;
+            writing-mode: horizontal-tb;
+        }
+        .course-cell {
+            min-height: 80px;
+            vertical-align: top;
+            padding: 3px;
+            position: relative;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            transition: all .2s;
+        }
+        .course-cell.conflict {
+            background: var(--conflict-bg);
+            border: 2px dashed var(--conflict-border);
+        }
+
+        /* ========== 课程卡片 ========== */
+        .course-card {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 7px 9px;
+            border-radius: 7px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all .25s ease;
+            position: relative;
+            overflow: hidden;
+            line-height: 1.35;
+        }
+        .course-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: -100%; width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,.2), transparent);
+            transition: left .5s;
+        }
+        .course-card:hover::before { left: 100%; }
+        .course-card:hover {
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 6px 18px rgba(102,126,234,.45);
+            z-index: 10;
+        }
+        .course-name { font-weight: 700; font-size: 12.5px; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .course-info { font-size: 10.5px; opacity: .88; line-height: 1.4; }
+
+        /* 冲突堆叠 */
+        .conflict-cards-stack { position: relative; min-height: 70px; }
+        .conflict-cards-stack .course-card {
+            position: absolute; top: 0; left: 0; right: 0;
+            opacity: 0; transform: scale(.95); transition: all .3s; pointer-events: none;
+        }
+        .conflict-cards-stack .course-card.visible { opacity: 1; transform: scale(1); pointer-events: auto; position: relative; }
+        .conflict-nav {
+            position: absolute; bottom: 3px; right: 3px;
+            display: flex; gap: 3px; z-index: 20;
+        }
+        .conflict-nav-btn {
+            width: 22px; height: 22px; border-radius: 50%;
+            background: rgba(220,38,38,.9); color: white; border: none;
+            cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;
+            transition: all .15s;
+        }
+        .conflict-nav-btn:hover { background: var(--danger-color); transform: scale(1.15); }
+        .conflict-indicator {
+            position: absolute; top: 3px; right: 3px;
+            background: var(--danger-color); color: white;
+            font-size: 9px; padding: 1px 6px; border-radius: 10px; font-weight: 700; z-index: 15;
+        }
+
+        /* ========== 右侧冲突面板 ========== */
+        .conflict-panel {
+            background: var(--bg-secondary);
+            border-radius: 14px;
+            padding: 18px;
+            box-shadow: var(--shadow-md);
+            height: fit-content;
+            position: sticky;
+            top: 20px;
+            max-height: calc(100vh - 40px);
+            /* 固定宽度和最小宽度，防止内容变化导致布局抖动 */
+            width: 300px;
+            min-width: 300px;
+            max-width: 300px;
+            /* 使用 scroll 而非 auto，保持滚动条始终占用空间 */
+            overflow-y: scroll;
+            overflow-x: hidden;
+            border: 1px solid var(--border-color);
+            /* 防止内部元素撑开 */
+            box-sizing: border-box;
+        }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+        .panel-header h3 { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+        .conflict-count { background: var(--danger-color); color: white; padding: 2px 9px; border-radius: 12px; font-size: 11px; font-weight: 700; }
+        .conflict-list { display: flex; flex-direction: column; gap: 10px; }
+        .conflict-item {
+            background: var(--conflict-bg); border: 1px solid var(--conflict-border);
+            border-radius: 10px; padding: 12px; transition: all .2s;
+            /* 防止内容撑开 */
+            width: 100%;
+            box-sizing: border-box;
+            overflow: hidden;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+        .conflict-item:hover { box-shadow: var(--shadow-sm); transform: translateX(-2px); }
+        .conflict-time { font-size: 12px; font-weight: 700; color: var(--danger-color); margin-bottom: 6px; }
+        .conflict-course-name {
+            font-size: 12px; color: var(--text-primary);
+            padding: 4px 8px; background: rgba(255,255,255,.5); border-radius: 5px; margin-bottom: 3px;
+            /* 防止长课程名撑开 */
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        [data-theme="dark"] .conflict-course-name { background: rgba(0,0,0,.25); }
+        .conflict-actions { display: flex; gap: 5px; margin-top: 8px; flex-wrap: wrap; }
+        .conflict-actions .btn { padding: 5px 10px; font-size: 11px; }
+        .no-conflicts { text-align: center; padding: 28px 16px; color: var(--text-secondary); }
+        .no-conflicts-icon { font-size: 42px; margin-bottom: 10px; }
+        .no-conflicts p { font-size: 13px; font-weight: 600; }
+        .no-conflicts p:last-child { font-size: 11px; font-weight: normal; opacity: .7; margin-top: 6px; }
+
+        /* ========== Tooltip 悬浮弹窗 ========== */
+        .tooltip-popup {
+            position: fixed;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px 18px;
+            box-shadow: var(--shadow-lg);
+            z-index: 9999;
+            /* 固定宽度防止内容变化导致抖动 */
+            width: 300px;
+            min-width: 300px;
+            max-width: 300px;
+            animation: tipIn .2s ease;
+            pointer-events: none;
+            /* 确保不影响文档流 */
+            contain: layout style paint;
+        }
+        @keyframes tipIn { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+        .tooltip-field { display: flex; margin-bottom: 7px; font-size: 12.5px; }
+        .tooltip-label { color: var(--text-secondary); width: 65px; flex-shrink: 0; font-weight: 600; }
+        .tooltip-value { color: var(--text-primary); font-weight: 700; word-break: break-all; }
+
+        /* ========== Modal 弹窗 ========== */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,.5); backdrop-filter: blur(5px);
+            display: flex; align-items: center; justify-content: center; z-index: 10000;
+            /* 防止弹窗影响页面布局 */
+            contain: strict;
+        }
+        .modal-content {
+            background: var(--bg-secondary); border-radius: 16px;
+            padding: 26px; width: 480px; min-width: 480px; max-width: 480px; max-height: 85vh;
+            overflow-y: auto; box-shadow: var(--shadow-lg); border: 1px solid var(--border-color);
+            /* 固定宽度防止内容变化导致抖动 */
+            box-sizing: border-box;
+        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .modal-header h2 { font-size: 18px; font-weight: 800; color: var(--text-primary); }
+        .modal-close {
+            width: 32px; height: 32px; border-radius: 50%; border: none;
+            background: var(--bg-tertiary); color: var(--text-secondary); cursor: pointer;
+            font-size: 18px; display: flex; align-items: center; justify-content: center;
+            transition: all .2s;
+        }
+        .modal-close:hover { background: var(--danger-color); color: white; transform: rotate(90deg); }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; }
+        .form-group input, .form-group select {
+            width: 100%; padding: 10px 14px; border: 1.5px solid var(--border-color);
+            border-radius: 8px; font-size: 13.5px; background: var(--bg-tertiary);
+            color: var(--text-primary); transition: all .2s;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none; border-color: var(--accent-color);
+            box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+        }
+        .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+        .file-input-hidden { display: none; }
+        .empty-state { text-align: center; padding: 56px 20px; color: var(--text-secondary); }
+        .empty-state-icon { font-size: 58px; margin-bottom: 14px; }
+        .empty-state-text { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+        .empty-state-hint { font-size: 12.5px; opacity: .7; }
+
+        /* Toast 提示 */
+        .toast-message {
+            position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+            background: var(--bg-secondary); color: var(--text-primary);
+            padding: 12px 26px; border-radius: 10px; box-shadow: var(--shadow-lg);
+            z-index: 10001; font-size: 13.5px; font-weight: 600;
+            animation: toastUp .3s ease; border-left: 4px solid var(--success-color);
+        }
+        .toast-message.error { border-left-color: var(--danger-color); }
+        @keyframes toastUp { from{opacity:0;transform:translateX(-50%) translateY(18px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+
+        /* 响应式 */
+        @media (max-width: 1200px) {
+            .app-container { grid-template-columns: 1fr; }
+            .week-selector, .conflict-panel { position: static; }
+            .week-grid { grid-template-columns: repeat(6, 1fr); }
+        }
+        @media (max-width: 768px) {
+            .app-container { padding: 10px; gap: 10px; }
+            .schedule-main { padding: 14px; overflow-x: auto; }
+            .action-buttons { width: 100%; justify-content: center; }
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-tertiary); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- 主题切换按钮 -->
+        <button class="theme-toggle" @click="toggleTheme" :title="isDark ? '浅色模式' : '深色模式'">{{ isDark ? '🌙' : '☀️' }}</button>
+
+        <!-- 三栏布局容器 -->
+        <div class="app-container">
+
+            <!-- ====== 左侧：1-18 周选择器 ====== -->
+            <aside class="week-selector">
+                <h3>📅 选择周次</h3>
+                <div class="week-grid">
+                    <button v-for="w in 18" :key="w" class="week-btn"
+                        :class="{ active: selectedWeek === w }" @click="selectWeek(w)">
+                        第{{ w }}周
+                    </button>
+                </div>
+                <div class="week-stat">
+                    <p class="week-stat-label">📊 本周课程</p>
+                    <span class="week-stat-num">{{ getWeekCourseCount() }}</span>
+                    <span class="week-stat-unit"> 门课</span>
+                </div>
+            </aside>
+
+            <!-- ====== 中间：课表主体网格 ====== -->
+            <main class="schedule-main">
+                <div class="schedule-header">
+                    <h1 class="schedule-title">📚 校园课表 <span class="week-badge">第 {{ selectedWeek }} 周</span></h1>
+                    <div class="action-buttons">
+                        <button class="btn btn-primary" @click="showAddModal">➕ 新增</button>
+                        <button class="btn btn-outline" @click="exportData">💾 导出</button>
+                        <button class="btn btn-outline" @click="triggerImport">📂 导入</button>
+                        <input type="file" ref="fileInput" accept=".json" class="file-input-hidden" @change="importData">
+                        <button class="btn btn-danger" @click="scanAllConflicts">🔍 扫描冲突</button>
+                    </div>
+                </div>
+
+                <!-- 课表表格：行=节次(1-2~9-10)，列=周一~周日 -->
+                <table class="schedule-table" v-if="courses.length > 0">
+                    <thead>
+                        <tr>
+                            <th style="width:55px;">节次</th>
+                            <th v-for="day in weekDays" :key="day">{{ day }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="ts in timeSlots" :key="ts">
+                            <td><div class="time-slot-header">{{ ts }}</div></td>
+                            <td v-for="day in weekDays" :key="day+ts" class="course-cell"
+                                :class="{ conflict: hasConflict(day, ts) }">
+                                
+                                <!-- 单元格有课程时渲染卡片/堆叠 -->
+                                <template v-if="getCellCourses(day, ts).length > 0">
+                                    <!-- 单个课程直接显示 -->
+                                    <div v-if="getCellCourses(day, ts).length === 1" class="course-card"
+                                        @mouseenter="showTooltip($event, getCellCourses(day, ts)[0])"
+                                        @mouseleave="hideTooltip"
+                                        @click="viewCourse(getCellCourses(day, ts)[0])">
+                                        <div class="course-name">{{ getCellCourses(day, ts)[0].name }}</div>
+                                        <div class="course-info">{{ getCellCourses(day, ts)[0].place }}</div>
+                                    </div>
+
+                                    <!-- 多门冲突课程：堆叠+导航 -->
+                                    <div v-else class="conflict-cards-stack">
+                                        <span class="conflict-indicator">{{ getCellCourses(day, ts).length }}门冲突</span>
+                                        <div v-for="(c, idx) in getCellCourses(day, ts)" :key="c.kchId+'-'+idx"
+                                            class="course-card"
+                                            :class="{ visible: getVisibleIndex(day, ts) === idx }"
+                                            @mouseenter="showTooltip($event, c)" @mouseleave="hideTooltip"
+                                            @click="viewCourse(c)">
+                                            <div class="course-name">{{ c.name }}</div>
+                                            <div class="course-info">{{ c.place }}</div>
+                                        </div>
+                                        <div class="conflict-nav">
+                                            <button class="conflict-nav-btn" @click="prevConflict(day, ts)">◀</button>
+                                            <button class="conflict-nav-btn" @click="nextConflict(day, ts)">▶</button>
+                                        </div>
+                                    </div>
+                                </template>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <!-- 无数据空状态 -->
+                <div v-else class="empty-state">
+                    <div class="empty-state-icon">📭</div>
+                    <div class="empty-state-text">暂无课程数据</div>
+                    <div class="empty-state-hint">点击「新增」或从JSON导入课程</div>
+                </div>
+            </main>
+
+            <!-- ====== 右侧：冲突汇总面板 ====== -->
+            <aside class="conflict-panel">
+                <div class="panel-header">
+                    <h3>⚠️ 冲突汇总 <span class="conflict-count" v-if="allConflicts.length>0">{{ allConflicts.length }}</span></h3>
+                    <button class="btn btn-outline" style="padding:4px 10px;font-size:11px;" @click="scanAllConflicts">🔄</button>
+                </div>
+
+                <div class="conflict-list" v-if="allConflicts.length > 0">
+                    <div v-for="(cf, i) in allConflicts" :key="i" class="conflict-item">
+                        <div class="conflict-time">🕐 {{ cf.day }} {{ cf.time }}节 | 第{{ cf.week }}周</div>
+                        <div class="conflict-course-name" v-for="(c, j) in cf.courses" :key="j">• {{ c.name }}</div>
+                        <div class="conflict-actions">
+                            <button class="btn btn-outline" @click="manualReschedule(cf)">✏️ 调课</button>
+                            <button class="btn btn-outline" @click="replaceCourse(cf)">🔁 替换</button>
+                            <button class="btn btn-danger" @click="deleteConflicted(cf)">🗑 删除</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-else class="no-conflicts">
+                    <div class="no-conflicts-icon">✅</div>
+                    <p>暂无课程冲突</p>
+                    <p>所有课程安排正常</p>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Tooltip 悬浮信息弹窗 -->
+        <div v-if="tooltip.show" class="tooltip-popup"
+             :style="{ left: tooltip.x+'px', top: tooltip.y+'px' }">
+            <div class="tooltip-field"><span class="tooltip-label">课程名称</span><span class="tooltip-value">{{ tooltip.course?.name }}</span></div>
+            <div class="tooltip-field"><span class="tooltip-label">授课教师</span><span class="tooltip-value">{{ tooltip.course?.teacher }}</span></div>
+            <div class="tooltip-field"><span class="tooltip-label">上课地点</span><span class="tooltip-value">{{ tooltip.course?.place }}</span></div>
+            <div class="tooltip-field"><span class="tooltip-label">上课时间</span><span class="tooltip-value">{{ tooltip.course?.day }} 第{{ tooltip.course?.time }}节</span></div>
+            <div class="tooltip-field"><span class="tooltip-label">教学周次</span><span class="tooltip-value">第{{ tooltip.course?.week }}周</span></div>
+            <div class="tooltip-field"><span class="tooltip-label">课程编号</span><span class="tooltip-value">{{ tooltip.course?.kchId }}</span></div>
+        </div>
+
+        <!-- 课程 新增/编辑/查看 弹窗 -->
+        <div v-if="modal.show" class="modal-overlay" @click.self="closeModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>{{ modal.mode==='add'?'➕ 新增': modal.mode==='edit'?'✏️ 编辑':'📋 详情' }}</h2>
+                    <button class="modal-close" @click="closeModal">×</button>
+                </div>
+
+                <!-- 编辑/新增表单 -->
+                <div v-if="modal.mode!=='view'">
+                    <div class="form-group">
+                        <label>课程名称 *</label><input type="text" v-model="formData.name" placeholder="请输入课程名" />
+                    </div>
+                    <div class="form-group">
+                        <label>授课教师</label><input type="text" v-model="formData.teacher" placeholder="工号/姓名/职称" />
+                    </div>
+                    <div class="form-group">
+                        <label>上课地点</label><input type="text" v-model="formData.place" placeholder="如：南A105" />
+                    </div>
+                    <div class="form-group">
+                        <label>星期几 *</label>
+                        <select v-model="formData.day">
+                            <option value="">请选择</option>
+                            <option v-for="d in weekDays" :key="d" :value="d">{{ d }}</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>节次 *</label>
+                        <select v-model="formData.time">
+                            <option value="">请选择</option>
+                            <option v-for="t in timeSlots" :key="t" :value="t">{{ t }}节</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>教学周 *</label>
+                        <select v-model="formData.week">
+                            <option :value="null">请选择</option>
+                            <option v-for="w in 18" :key="w" :value="w">第{{ w }}周</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>课程编号</label><input type="text" v-model="formData.kchId" placeholder="留空自动生成" />
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn btn-outline" @click="closeModal">取消</button>
+                        <button class="btn btn-primary" @click="saveCourse">{{ modal.mode==='add'?'确认新增':'保存修改' }}</button>
+                    </div>
+                </div>
+
+                <!-- 查看详情只读展示 -->
+                <div v-else style="line-height:2;">
+                    <div class="tooltip-field"><span class="tooltip-label">课程名称</span><span class="tooltip-value">{{ formData.name }}</span></div>
+                    <div class="tooltip-field"><span class="tooltip-label">授课教师</span><span class="tooltip-value">{{ formData.teacher }}</span></div>
+                    <div class="tooltip-field"><span class="tooltip-label">上课地点</span><span class="tooltip-value">{{ formData.place }}</span></div>
+                    <div class="tooltip-field"><span class="tooltip-label">上课时间</span><span class="tooltip-value">{{ formData.day }} 第{{ formData.time }}节</span></div>
+                    <div class="tooltip-field"><span class="tooltip-label">教学周次</span><span class="tooltip-value">第{{ formData.week }}周</span></div>
+                    <div class="tooltip-field"><span class="tooltip-label">课程编号</span><span class="tooltip-value">{{ formData.kchId }}</span></div>
+                    <div class="form-actions" style="margin-top:22px;">
+                        <button class="btn btn-outline" @click="closeModal">关闭</button>
+                        <button class="btn btn-primary" @click="switchToEdit">编辑</button>
+                        <button class="btn btn-danger" @click="deleteCurrentCourse">删除</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast 提示 -->
+        <transition name="toast">
+            <div v-if="toast.show" class="toast-message" :class="{ error: toast.type==='error' }">{{ toast.message }}</div>
+        </transition>
+    </div>
+
+    <!-- ==================== Vue 应用逻辑 ==================== -->
+    <script>
+    const { createApp, ref, reactive, onMounted } = Vue;
+
+    createApp({
+        setup() {
+            // =============== 常量定义 ===============
+            
+            /** 星期数组：周一到周日 */
+            const weekDays = ['星期一','星期二','星期三','星期四','星期五','星期六','星期日'];
+
+            /**
+             * 时间节次数组 —— 使用连堂课格式
+             * 对应 data.json 中的 time 字段值：1-2, 3-4, 5-6, 7-8, 9-10
+             * 每项代表连续两节课的一个时间段
+             */
+            const timeSlots = ['1-2', '3-4', '5-6', '7-8', '9-10'];
+
+            // =============== 响应式状态 ===============
+            
+            /** 当前选中周次（默认第1周）*/
+            const selectedWeek = ref(1);
+            /** 深色主题开关 */
+            const isDark = ref(false);
+
+            /**
+             * 课程数据数组
+             * 数据来源：data.json 的 data.course 字段
+             * 每条记录字段固定为：kchId, id, name, teacher, time, place, week, day
+             */
+            // ⚡ 真实课程数据 — 从 data.json 提取的完整课表
+            const courses = ref([
+                {"kchId":"0802701036","id":null,"name":"液压元件与系统B","teacher":"02996/李晓晖/副教授","time":"1-2","place":"南A105","week":2,"day":"星期二"},
+                {"kchId":"0802701036","id":null,"name":"液压元件与系统B","teacher":"02996/李晓晖/副教授","time":"1-2","place":"南A105","week":3,"day":"星期二"},
+                {"kchId":"0802701036","id":null,"name":"液压元件与系统B","teacher":"02996/李晓晖/副教授","time":"1-2","place":"南A105","week":4,"day":"星期二"},
+                {"kchId":"0802701036","id":null,"name":"液压元件与系统B","teacher":"02996/李晓晖/副教授","time":"1-2","place":"南A105","week":5,"day":"星期二"},
+                {"kchId":"0802701036","id":null,"name":"液压元件与系统B","teacher":"02996/李晓晖/副教授","time":"1-2","place":"南A105","week":6,"day":"星期二"},
+                {"kchId":"0802701036","id":null,"name":"液压元件与系统B","teacher":"02996/李晓晖/副教授","time":"1-2","place":"南A105","week":7,"day":"星期二"},
+                {"kchId":"0802701036","id":null,"name":"液压元件与系统B","teacher":"02996/李晓晖/副教授","time":"7-8","place":"南A105","week":2,"day":"星期四"},
+                {"kchId":"0802701036","id":null,"name":"液压元件与系统B","teacher":"02996/李晓晖/副教授","time":"7-8","place":"南A105","week":3,"day":"星期四"},
+                {"kchId":"0802701036","id":null,"name":"液压元件与系统B","teacher":"02996/李晓晖/副教授","time":"7-8","place":"南A105","week":4,"day":"星期四"},
+                {"kchId":"0802701036","id":null,"name":"液压元件与系统B","teacher":"02996/李晓晖/副教授","time":"7-8","place":"南A105","week":5,"day":"星期四"},
+                {"kchId":"0802701036","id":null,"name":"液压元件与系统B","teacher":"02996/李晓晖/副教授","time":"7-8","place":"南A105","week":7,"day":"星期四"},
+                {"kchId":"0802701036","id":null,"name":"液压元件与系统B","teacher":"02996/李晓晖/副教授","time":"9-10","place":"南A105","week":6,"day":"星期五"},
+                
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"3-4","place":"南A105","week":1,"day":"星期二"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"3-4","place":"南A105","week":2,"day":"星期二"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"3-4","place":"南A105","week":3,"day":"星期二"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"3-4","place":"南A105","week":4,"day":"星期二"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"3-4","place":"南A105","week":5,"day":"星期二"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"3-4","place":"南A105","week":6,"day":"星期二"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"3-4","place":"南A105","week":7,"day":"星期二"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"3-4","place":"南A105","week":15,"day":"星期二"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":1,"day":"星期三"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":2,"day":"星期三"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":3,"day":"星期三"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":4,"day":"星期三"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":5,"day":"星期三"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":6,"day":"星期三"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":7,"day":"星期三"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":15,"day":"星期三"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":1,"day":"星期五"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":2,"day":"星期五"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":3,"day":"星期五"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":4,"day":"星期五"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":5,"day":"星期五"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":6,"day":"星期五"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":7,"day":"星期五"},
+                {"kchId":"0802701045","id":null,"name":"液压伺服与比例控制系统","teacher":"03151/朱牧之/副教授","time":"1-2","place":"南A105","week":15,"day":"星期五"},
+
+                {"kchId":"4465A4C4A8E131ACE06365CBA8C050C1","id":null,"name":"大学生就业指导","teacher":"03345/谢佳敏/讲师（思政）","time":"1-2","place":"经管D101","week":9,"day":"星期二"},
+                {"kchId":"4465A4C4A8E131ACE06365CBA8C050C1","id":null,"name":"大学生就业指导","teacher":"03345/谢佳敏/讲师（思政）","time":"1-2","place":"经管D101","week":7,"day":"星期四"},
+                {"kchId":"4465A4C4A8E131ACE06365CBA8C050C1","id":null,"name":"大学生就业指导","teacher":"03345/谢佳敏/讲师（思政）","time":"1-2","place":"经管D101","week":9,"day":"星期四"},
+                {"kchId":"4465A4C4A8E131ACE06365CBA8C050C1","id":null,"name":"大学生就业指导","teacher":"03345/谢佳敏/讲师（思政）","time":"1-2","place":"经管D101","week":10,"day":"星期四"},
+
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"5-6","place":"经管C308","week":1,"day":"星期一"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"5-6","place":"经管C308","week":2,"day":"星期一"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"5-6","place":"经管C308","week":3,"day":"星期一"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"5-6","place":"经管C308","week":4,"day":"星期一"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"5-6","place":"经管C308","week":5,"day":"星期一"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"5-6","place":"经管C308","week":7,"day":"星期一"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"7-8","place":"经管C308","week":1,"day":"星期二"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"7-8","place":"经管C308","week":2,"day":"星期二"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"7-8","place":"经管C308","week":3,"day":"星期二"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"7-8","place":"经管C308","week":4,"day":"星期二"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"7-8","place":"经管C308","week":5,"day":"星期二"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"7-8","place":"经管C308","week":7,"day":"星期二"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"3-4","place":"经管C308","week":1,"day":"星期四"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"3-4","place":"经管C308","week":2,"day":"星期四"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"3-4","place":"经管C308","week":3,"day":"星期四"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"3-4","place":"经管C308","week":4,"day":"星期四"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"3-4","place":"经管C308","week":5,"day":"星期四"},
+                {"kchId":"0802501023","id":null,"name":"机电传动控制D","teacher":"03214/邓正平/讲师","time":"3-4","place":"经管C308","week":7,"day":"星期四"},
+
+                {"kchId":"0802501036","id":null,"name":"数控技术D","teacher":"03354/蒋立异/讲师;03460/李明/讲师","time":"7-8","place":"经管C101","week":1,"day":"星期一"},
+                {"kchId":"0802501036","id":null,"name":"数控技术D","teacher":"03354/蒋立异/讲师;03460/李明/讲师","time":"7-8","place":"经管C101","week":2,"day":"星期一"},
+                {"kchId":"0802501036","id":null,"name":"数控技术D","teacher":"03354/蒋立异/讲师;03460/李明/讲师","time":"7-8","place":"经管C101","week":3,"day":"星期一"},
+                {"kchId":"0802501036","id":null,"name":"数控技术D","teacher":"03354/蒋立异/讲师;03460/李明/讲师","time":"7-8","place":"东A202","week":6,"day":"星期二"},
+                {"kchId":"0802501036","id":null,"name":"数控技术D","teacher":"03354/蒋立异/讲师;03460/李明/讲师","time":"7-8","place":"东A202","week":8,"day":"星期二"},
+                {"kchId":"0802501036","id":null,"name":"数控技术D","teacher":"03354/蒋立异/讲师;03460/李明/讲师","time":"7-8","place":"东A202","week":9,"day":"星期二"},
+                {"kchId":"0802501036","id":null,"name":"数控技术D","teacher":"03354/蒋立异/讲师;03460/李明/讲师","time":"9-10","place":"东A404","week":4,"day":"星期四"},
+                {"kchId":"0802501036","id":null,"name":"数控技术D","teacher":"03354/蒋立异/讲师;03460/李明/讲师","time":"9-10","place":"东A404","week":5,"day":"星期四"},
+                {"kchId":"0802501036","id":null,"name":"数控技术D","teacher":"03354/蒋立异/讲师;03460/李明/讲师","time":"9-10","place":"东A404","week":6,"day":"星期四"},
+                {"kchId":"0802501036","id":null,"name":"数控技术D","teacher":"03354/蒋立异/讲师;03460/李明/讲师","time":"9-10","place":"东A404","week":7,"day":"星期四"},
+                {"kchId":"0802501036","id":null,"name":"数控技术D","teacher":"03354/蒋立异/讲师;03460/李明/讲师","time":"9-10","place":"南A312","week":1,"day":"星期五"},
+                {"kchId":"0802501036","id":null,"name":"数控技术D","teacher":"03354/蒋立异/讲师;03460/李明/讲师","time":"9-10","place":"南A312","week":2,"day":"星期五"},
+                {"kchId":"0802501036","id":null,"name":"数控技术D","teacher":"03354/蒋立异/讲师;03460/李明/讲师","time":"9-10","place":"南A312","week":3,"day":"星期五"},
+
+                {"kchId":"074464355B5A542AE06365CBA8C02349","id":null,"name":"机械制造基础Ⅱ","teacher":"00529/薛小强/副教授;02540/丁文政/教授","time":"9-10","place":"经管C306","week":1,"day":"星期一"},
+                {"kchId":"074464355B5A542AE06365CBA8C02349","id":null,"name":"机械制造基础Ⅱ","teacher":"00529/薛小强/副教授;02540/丁文政/教授","time":"9-10","place":"经管C306","week":2,"day":"星期一"},
+                {"kchId":"074464355B5A542AE06365CBA8C02349","id":null,"name":"机械制造基础Ⅱ","teacher":"00529/薛小强/副教授;02540/丁文政/教授","time":"9-10","place":"经管C306","week":3,"day":"星期一"},
+                {"kchId":"074464355B5A542AE06365CBA8C02349","id":null,"name":"机械制造基础Ⅱ","teacher":"00529/薛小强/副教授;02540/丁文政/教授","time":"9-10","place":"经管C306","week":4,"day":"星期一"},
+                {"kchId":"074464355B5A542AE06365CBA8C02349","id":null,"name":"机械制造基础Ⅱ","teacher":"00529/薛小强/副教授;02540/丁文政/教授","time":"9-10","place":"经管C306","week":5,"day":"星期一"},
+                {"kchId":"074464355B5A542AE06365CBA8C02349","id":null,"name":"机械制造基础Ⅱ","teacher":"00529/薛小强/副教授;02540/丁文政/教授","time":"9-10","place":"经管C306","week":7,"day":"星期一"},
+                {"kchId":"074464355B5A542AE06365CBA8C02349","id":null,"name":"机械制造基础Ⅱ","teacher":"00529/薛小强/副教授;02540/丁文政/教授","time":"9-10","place":"经管C306","week":8,"day":"星期一"},
+                {"kchId":"074464355B5A542AE06365CBA8C02349","id":null,"name":"机械制造基础Ⅱ","teacher":"00529/薛小强/副教授;02540/丁文政/教授","time":"5-6","place":"经管C306","week":1,"day":"星期四"},
+                {"kchId":"074464355B5A542AE06365CBA8C02349","id":null,"name":"机械制造基础Ⅱ","teacher":"00529/薛小强/副教授;02540/丁文政/教授","time":"5-6","place":"经管C306","week":2,"day":"星期四"},
+                {"kchId":"074464355B5A542AE06365CBA8C02349","id":null,"name":"机械制造基础Ⅱ","teacher":"00529/薛小强/副教授;02540/丁文政/教授","time":"5-6","place":"经管C306","week":3,"day":"星期四"},
+                {"kchId":"074464355B5A542AE06365CBA8C02349","id":null,"name":"机械制造基础Ⅱ","teacher":"00529/薛小强/副教授;02540/丁文政/教授","time":"5-6","place":"经管C306","week":4,"day":"星期四"},
+                {"kchId":"074464355B5A542AE06365CBA8C02349","id":null,"name":"机械制造基础Ⅱ","teacher":"00529/薛小强/副教授;02540/丁文政/教授","time":"5-6","place":"经管C306","week":5,"day":"星期四"},
+                {"kchId":"074464355B5A542AE06365CBA8C02349","id":null,"name":"机械制造基础Ⅱ","teacher":"00529/薛小强/副教授;02540/丁文政/教授","time":"5-6","place":"经管C306","week":7,"day":"星期四"},
+                {"kchId":"074464355B5A542AE06365CBA8C02349","id":null,"name":"机械制造基础Ⅱ","teacher":"00529/薛小强/副教授;02540/丁文政/教授","time":"3-4","place":"南A102","week":10,"day":"星期五"},
+
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"3-4","place":"南A204","week":6,"day":"星期三"},
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"3-4","place":"南A204","week":8,"day":"星期三"},
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"3-4","place":"南A204","week":9,"day":"星期三"},
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"3-4","place":"南A204","week":10,"day":"星期三"},
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"3-4","place":"南A204","week":15,"day":"星期三"},
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"3-4","place":"南A204","week":16,"day":"星期三"},
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"7-8","place":"南A308","week":1,"day":"星期五"},
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"7-8","place":"南A308","week":2,"day":"星期五"},
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"7-8","place":"南A308","week":3,"day":"星期五"},
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"7-8","place":"南A308","week":4,"day":"星期五"},
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"7-8","place":"南A308","week":5,"day":"星期五"},
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"7-8","place":"南A308","week":7,"day":"星期五"},
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"7-8","place":"南A308","week":15,"day":"星期五"},
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"7-8","place":"南A308","week":17,"day":"星期五"},
+                {"kchId":"0803301047","id":null,"name":"测试技术","teacher":"03577/徐鸿蒙/副教授","time":"7-8","place":"南A308","week":18,"day":"星期五"},
+
+                {"kchId":"0302110006","id":null,"name":"形势与政策","teacher":"80029/许海波/讲师","time":"7-8","place":"文理B101","week":5,"day":"星期一"},
+                {"kchId":"0302110006","id":null,"name":"形势与政策","teacher":"80029/许海波/讲师","time":"7-8","place":"文理B101","week":7,"day":"星期一"},
+                {"kchId":"0302110006","id":null,"name":"形势与政策","teacher":"80029/许海波/讲师","time":"7-8","place":"文理B101","week":8,"day":"星期一"},
+                {"kchId":"0302110006","id":null,"name":"形势与政策","teacher":"80029/许海波/讲师","time":"7-8","place":"文理B101","week":9,"day":"星期一"},
+                {"kchId":"0302110006","id":null,"name":"形势与政策","teacher":"80029/许海波/讲师","time":"1-2","place":"文理B205","week":8,"day":"星期三"},
+                {"kchId":"0302110006","id":null,"name":"形势与政策","teacher":"80029/许海波/讲师","time":"1-2","place":"文理B205","week":9,"day":"星期三"},
+
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"3-4","place":"经管C306","week":1,"day":"星期二"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"3-4","place":"经管C306","week":2,"day":"星期二"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"3-4","place":"经管C306","week":3,"day":"星期二"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"3-4","place":"经管C306","week":4,"day":"星期二"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"3-4","place":"经管C306","week":5,"day":"星期二"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"3-4","place":"经管C306","week":7,"day":"星期二"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"3-4","place":"经管C306","week":8,"day":"星期二"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"3-4","place":"经管C306","week":9,"day":"星期二"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"3-4","place":"经管C306","week":13,"day":"星期二"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"3-4","place":"经管C306","week":14,"day":"星期二"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"3-4","place":"经管C306","week":15,"day":"星期二"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"7-8","place":"经管C306","week":9,"day":"星期四"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"7-8","place":"经管C306","week":14,"day":"星期四"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"7-8","place":"经管C306","week":1,"day":"星期五"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"7-8","place":"经管C306","week":2,"day":"星期五"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"7-8","place":"经管C306","week":3,"day":"星期五"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"7-8","place":"经管C306","week":4,"day":"星期五"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"7-8","place":"经管C306","week":5,"day":"星期五"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"7-8","place":"经管C306","week":7,"day":"星期五"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"7-8","place":"经管C306","week":13,"day":"星期五"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"7-8","place":"经管C306","week":14,"day":"星期五"},
+                {"kchId":"0802301006","id":null,"name":"机械原理A","teacher":"02849/林晓华/讲师;02937/刘远韬/副教授","time":"7-8","place":"经管C306","week":15,"day":"星期五"},
+
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"3-4","place":"南A304","week":1,"day":"星期二"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"3-4","place":"南A304","week":2,"day":"星期二"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"3-4","place":"南A304","week":3,"day":"星期二"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"3-4","place":"南A304","week":4,"day":"星期二"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"3-4","place":"南A304","week":5,"day":"星期二"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"3-4","place":"南A304","week":6,"day":"星期二"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"3-4","place":"南A304","week":9,"day":"星期二"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"3-4","place":"南A304","week":11,"day":"星期二"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"3-4","place":"南A304","week":12,"day":"星期二"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"3-4","place":"南A304","week":13,"day":"星期二"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"3-4","place":"南A304","week":14,"day":"星期二"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"3-4","place":"南A304","week":15,"day":"星期二"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"5-6","place":"南A209","week":1,"day":"星期四"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"5-6","place":"南A209","week":2,"day":"星期四"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"5-6","place":"南A209","week":3,"day":"星期四"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"5-6","place":"南A209","week":4,"day":"星期四"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"5-6","place":"南A209","week":5,"day":"星期四"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"5-6","place":"南A209","week":6,"day":"星期四"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"5-6","place":"南A209","week":9,"day":"星期四"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"5-6","place":"南A209","week":10,"day":"星期四"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"5-6","place":"南A209","week":11,"day":"星期四"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"5-6","place":"南A209","week":12,"day":"星期四"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"5-6","place":"南A209","week":13,"day":"星期四"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"5-6","place":"南A209","week":14,"day":"星期四"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"5-6","place":"南A209","week":15,"day":"星期四"},
+                {"kchId":"0801105003","id":null,"name":"材料力学C","teacher":"02467/方建士/教授","time":"3-4","place":"南A304","week":10,"day":"星期六"},
+
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":1,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":2,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":3,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":4,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":5,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":6,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":7,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":8,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":9,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":10,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":11,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":12,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":13,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":14,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":15,"day":"星期三"},
+                {"kchId":"E6AC2723E07387E6E05365CBA8C0D6CD","id":null,"name":"毛泽东思想和中国特色社会主义理论体系概论","teacher":"02201/苏红/讲师","time":"3-4","place":"文理A211","week":16,"day":"星期三"}
+            ]);
+
+            /** 冲突课程可见性索引（用于多门冲突课程的循环切换） */
+            const conflictIdx = reactive({});
+            /** 全局扫描到的所有冲突列表 */
+            const allConflicts = ref([]);
+            /** Tooltip 悬浮弹窗状态 */
+            const tooltip = reactive({ show:false, x:0, y:0, course:null });
+            /** Modal 弹窗状态 */
+            const modal = reactive({ show:false, mode:'add', editIdx:-1 });
+            /** 表单绑定数据 */
+            const formData = reactive({ kchId:'', id:null, name:'', teacher:'', time:'', place:'', week:null, day:'' });
+            /** Toast 提示状态 */
+            const toast = reactive({ show:false, message:'', type:'success' });
+            const fileInput = ref(null);
+
+            // =============== 核心功能函数 ===============
+
+            /** 主题切换 + localStorage持久化 */
+            function toggleTheme() {
+                isDark.value = !isDark.value;
+                document.documentElement.setAttribute('data-theme', isDark.value ? 'dark' : 'light');
+                localStorage.setItem('schedule-theme', isDark.value ? 'dark' : 'light');
+            }
+
+            /** 选择周次 */
+            function selectWeek(w) { selectedWeek.value = w; }
+
+            /** 当前周的课程数量统计 */
+            function getWeekCourseCount() {
+                return courses.value.filter(c => c.week === selectedWeek.value).length;
+            }
+
+            /**
+             * 【核心渲染】获取指定单元格的课程列表
+             * 匹配条件：day相同 + time相同 + week等于当前选中周
+             * 
+             * @param {string} day - 如 "星期一"
+             * @param {string} timeSlot - 如 "3-4"
+             * @returns {Array} 匹配的课程数组
+             */
+            function getCellCourses(day, timeSlot) {
+                return courses.value.filter(c =>
+                    c.day === day && c.time === timeSlot && c.week === selectedWeek.value
+                );
+            }
+
+            /**
+             * 冲突判定：同一天+同一时间段+同一周的课 >= 2门即为冲突
+             */
+            function hasConflict(day, timeSlot) {
+                return getCellCourses(day, timeSlot).length > 1;
+            }
+
+            /** 获取冲突堆叠中当前可见的课程索引 */
+            function getVisibleIndex(day, ts) {
+                const key = `${day}-${ts}`;
+                if (!(key in conflictIdx)) conflictIdx[key] = 0;
+                return conflictIdx[key];
+            }
+
+            /** 冲突课程上一个（循环） */
+            function prevConflict(day, ts) {
+                const key = `${day}-${ts}`;
+                const list = getCellCourses(day, ts);
+                if (!(key in conflictIdx)) conflictIdx[key] = 0;
+                conflictIdx[key] = (conflictIdx[key] - 1 + list.length) % list.length;
+            }
+
+            /** 冲突课程下一个（循环） */
+            function nextConflict(day, ts) {
+                const key = `${day}-${ts}`;
+                const list = getCellCourses(day, ts);
+                if (!(key in conflictIdx)) conflictIdx[key] = 0;
+                conflictIdx[key] = (conflictIdx[key] + 1) % list.length;
+            }
+
+            /**
+             * 显示悬浮信息弹窗
+             * 自动计算位置防止超出视口边界
+             */
+            function showTooltip(event, course) {
+                tooltip.course = course; tooltip.show = true;
+                let x = event.clientX + 15, y = event.clientY + 15;
+                if (x + 320 > window.innerWidth) x = event.clientX - 320 - 15;
+                if (y + 210 > window.innerHeight) y = event.clientY - 210 - 15;
+                tooltip.x = x; tooltip.y = y;
+            }
+
+            /** 隐藏悬浮弹窗 */
+            function hideTooltip() { tooltip.show = false; tooltip.course = null; }
+
+            // =============== CRUD 操作 ===============
+
+            function showAddModal() { modal.show=true; modal.mode='add'; modal.editIdx=-1; resetForm(); }
+
+            function viewCourse(c) {
+                modal.show=true; modal.mode='view';
+                modal.editIdx = courses.value.findIndex(x => x.kchId===c.kchId && x.day===c.day && x.time===c.time && x.week===c.week);
+                Object.assign(formData, {...c});
+            }
+            function switchToEdit() { modal.mode='edit'; }
+            function resetForm() { Object.assign(formData, { kchId:'', id:null, name:'', teacher:'', time:'', place:'', week:null, day:'' }); }
+
+            /** 保存新增/编辑 */
+            function saveCourse() {
+                if (!formData.name || !formData.day || !formData.time || !formData.week) {
+                    showToast('请填写完整必填信息','error'); return;
+                }
+                const nc = { kchId: formData.kchId||genKchId(), id: formData.id, name: formData.name, teacher: formData.teacher, time: String(formData.time), place: formData.place, week: Number(formData.week), day: formData.day };
+                if (modal.mode === 'add') { courses.value.push(nc); showToast('✅ 已添加'); }
+                else if (modal.editIdx >= 0) { courses.value[modal.editIdx] = nc; showToast('✅ 已修改'); }
+                closeModal(); scanAllConflicts();
+            }
+
+            /** 删除当前查看的课程 */
+            function deleteCurrentCourse() {
+                if (modal.editIdx>=0 && confirm('确定删除？')) {
+                    courses.value.splice(modal.editIdx,1); closeModal(); showToast('🗑 已删除'); scanAllConflicts();
+                }
+            }
+            function closeModal() { modal.show=false; resetForm(); }
+
+            /** 自动生成唯一课程编号 */
+            function genKchId() { return Date.now().toString().slice(-6)+Math.floor(Math.random()*1000).toString().padStart(3,'0'); }
+
+            // =============== 导入导出 ===============
+
+            /** 导出为JSON文件下载 */
+            function exportData() {
+                if (!courses.value.length) { showToast('无数据可导出','error'); return; }
+                try {
+                    const json = JSON.stringify({ version:'1.0', exportTime:new Date().toLocaleString(), total:courses.value.length, data: courses.value }, null, 2);
+                    const blob = new Blob([json],{type:'application/json'});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a'); a.href=url; a.download=`课表_${new Date().toISOString().slice(0,10)}.json`;
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                    showToast(`💾 已导出 ${courses.value.length} 门课`);
+                } catch(e) { console.error(e); showToast('导出失败','error'); }
+            }
+
+            function triggerImport() { fileInput.value?.click(); }
+
+            /** 从JSON文件导入课程数据 */
+            function importData(ev) {
+                const f = ev.target.files[0]; if (!f) return;
+                if (!f.name.endsWith('.json')) { showToast('请选JSON文件','error'); return; }
+                const r = new FileReader();
+                r.onload = e => {
+                    try {
+                        const p = JSON.parse(e.target.result);
+                        let arr = Array.isArray(p) ? p : (p.data || []);
+                        arr = arr.filter(c => c.name&&c.day&&c.time&&c.week);
+                        if (!arr.length) { showToast('数据无效或缺少必要字段','error'); return; }
+                        courses.value = arr;
+                        showToast(`📂 成功导入 ${arr.length} 门课`);
+                        scanAllConflicts();
+                    } catch(err) { console.error(err); showToast('解析失败，检查JSON格式','error'); }
+                };
+                r.readAsText(f); ev.target.value='';
+            }
+
+            // =============== 冲突检测算法 ===============
+
+            /**
+             * 【核心算法】全局冲突扫描
+             * 遍历全部18周 × 7天 × 5个时间段 的组合空间
+             * 对每个组合筛选匹配课程，≥2门则记录为冲突
+             *
+             * 复杂度: O(n × 18 × 7 × 5) = O(630n)
+             */
+            function scanAllConflicts() {
+                const conflicts = [];
+                for (let w=1; w<=18; w++) {
+                    for (const d of weekDays) {
+                        for (const t of timeSlots) {
+                            const m = courses.value.filter(c => c.day===d && c.time===t && c.week===w);
+                            if (m.length >= 2) conflicts.push({ day:d, time:t, week:w, courses:[...m], count:m.length });
+                        }
+                    }
+                }
+                allConflicts.value = conflicts;
+                if (conflicts.length) showToast(`⚠️ 检测到 ${conflicts.length} 处冲突`);
+                else showToast('✅ 无冲突');
+            }
+
+            /** 手动调课：打开编辑弹窗 */
+            function manualReschedule(cf) { if (cf.courses.length) { viewCourse(cf.courses[0]); setTimeout(switchToEdit,100); } }
+
+            /** 替换冲突课程 */
+            function replaceCourse(cf) {
+                if (!confirm(`将替换「${cf.courses[0]?.name}」`)) return;
+                const i = courses.value.findIndex(c => c.kchId===cf.courses[0].kchId && c.day===cf.courses[0].day && c.time===cf.courses[0].time && c.week===cf.courses[0].week);
+                if (i!==-1) courses.value.splice(i,1);
+                closeModal(); setTimeout(showAddModal,150);
+            }
+
+            /** 删除冲突课程组 */
+            function deleteConflicted(cf) {
+                const ns = cf.courses.map(c=>`• ${c.name}`).join('\n');
+                if (!confirm(`删除以下${cf.count}门课？\n\n${ns}`)) return;
+                cf.courses.forEach(t => {
+                    const i = courses.value.findIndex(c=>c.kchId===t.kchId&&c.day===t.day&&c.time===t.time&&c.week===t.week);
+                    if (i!==-1) courses.value.splice(i,1);
+                });
+                closeModal(); showToast(`🗑 已删除${cf.count}门`); scanAllConflicts();
+            }
+
+            function clearResolvedConflicts() { scanAllConflicts(); }
+
+            /** Toast提示（3秒自动消失） */
+            function showToast(msg, type='success') { toast.message=msg; toast.type=type; toast.show=true; setTimeout(()=>toast.show=false,3000); }
+
+            // =============== 生命周期 ===============
+            onMounted(() => {
+                const t = localStorage.getItem('schedule-theme');
+                if (t==='dark') { isDark.value=true; document.documentElement.setAttribute('data-theme','dark'); }
+                scanAllConflicts();  // 首次挂载即执行全量冲突扫描
+            });
+
+            // =============== 模板暴露接口 ===============
+            return {
+                weekDays, timeSlots, selectedWeek, isDark, courses,
+                conflictIdx, allConflicts, tooltip, modal, formData, toast, fileInput,
+                toggleTheme, selectWeek, getWeekCourseCount,
+                getCellCourses, hasConflict, getVisibleIndex, prevConflict, nextConflict,
+                showTooltip, hideTooltip,
+                showAddModal, viewCourse, switchToEdit, saveCourse, deleteCurrentCourse, closeModal,
+                exportData, triggerImport, importData,
+                scanAllConflicts, manualReschedule, replaceCourse, deleteConflicted, clearResolvedConflicts
+            };
+        }
+    }).mount('#app');
+    </script>
+</body>
+</html>
